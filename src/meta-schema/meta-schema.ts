@@ -50,6 +50,14 @@ const typeDefs = gql`
         "Information about the @collect field configuration, if \`isCollectField\` is \`true\`, \`null\` otherwise"
         collectFieldConfig: CollectFieldConfig
 
+        """
+        The sibling field holding the key of the referenced object.
+
+        Is always \`null\` if \`isReference\` is false. Otherwise, it can still be \`null\` if this field holds the
+        value itself.
+        """
+        referenceKeyField: Field
+
         localization(
             ${resolutionOrderDescription} resolutionOrder: [String]
         ): FieldLocalization
