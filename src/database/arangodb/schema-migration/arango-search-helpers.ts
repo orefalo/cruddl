@@ -3,6 +3,7 @@ import { ArangoSearchView, ArangoSearchViewPropertiesOptions } from 'arangojs/li
 import * as _ from 'lodash';
 import { FlexSearchLanguage } from '../../../model/config';
 import { Field, Model, RootEntityType } from '../../../model/implementation';
+import { ID_FIELD } from '../../../schema/constants';
 import { getCollectionNameForRootEntity } from '../arango-basics';
 import {
     CreateArangoSearchViewMigration,
@@ -148,33 +149,34 @@ function getPropertiesFromDefinition(
     ): ArangoSearchViewCollectionLink {
         if (field.type.isObjectType) {
             const fields: { [key: string]: ArangoSearchViewCollectionLink | undefined } = {};
-            field.type.fields
-                .filter(
-                    field =>
-                        (field.isFlexSearchIndexed || field.isFlexSearchFulltextIndexed) &&
-                        !path.some(
-                            value => value.name === field.name && field.declaringType.name === value.declaringType.name
-                        )
-                )
-                .forEach(value => (fields[value.name] = fieldDefinitionFor(value, recursionDepth, path.concat(field))));
-            return {
-                fields
-            };
+            // don't index recursive fields
+            // (Type1.field1: Type2, Type2.field2: Type1 => only index field1 and field1.field2)
+            const fieldsToIndex = field.type.fields.filter(
+                field => (field.isFlexSearchIndexed || field.isFlexSearchFulltextIndexed) && !path.includes(field)
+            );
+            for (const field of fieldsToIndex) {
+                let arangoFieldName;
+                if (field.declaringType.isRootEntityType && field.isSystemField && field.name === ID_FIELD) {
+                    arangoFieldName = '_key';
+                } else {
+                    arangoFieldName = field.name;
+                }
+                fields[arangoFieldName] = fieldDefinitionFor(field, recursionDepth, path.concat(field));
+            }
+            return { fields };
+        }
+
+        const analyzers: string[] = [];
+        if (field.isFlexSearchFulltextIndexed && field.flexSearchLanguage) {
+            analyzers.push(getAnalyzerFromFlexSearchLanguage(field.flexSearchLanguage));
+        }
+        if (field.isFlexSearchIndexed) {
+            analyzers.push(IDENTITY_ANALYZER);
+        }
+        if (_.isEqual(analyzers, [IDENTITY_ANALYZER])) {
+            return {};
         } else {
-            const analyzers: string[] = [];
-            if (field.isFlexSearchFulltextIndexed && field.flexSearchLanguage) {
-                analyzers.push(getAnalyzerFromFlexSearchLanguage(field.flexSearchLanguage));
-            }
-            if (field.isFlexSearchIndexed) {
-                analyzers.push(IDENTITY_ANALYZER);
-            }
-            if (_.isEqual(analyzers, [IDENTITY_ANALYZER])) {
-                return {};
-            } else {
-                return {
-                    analyzers
-                };
-            }
+            return { analyzers };
         }
     }
 
